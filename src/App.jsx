@@ -1,14 +1,28 @@
 import React, { useEffect, useState } from 'react';
 import api from './api';
 
+const LANGUAGE_NAMES = {
+  en: 'English',
+  de: 'Deutsch',
+};
+
 // ----------------------------
 // Kleine „Navigation“ per Hash
 // ----------------------------
 const getRoute = () => (window.location.hash.replace('#', '') || '/');
 
 export default function App() {
+  const [language, setLanguage] = useState(() => {
+    if (typeof window === 'undefined') return 'en';
+    const stored = localStorage.getItem('language');
+    return stored && LANGUAGE_NAMES[stored] ? stored : 'en';
+  });
   const [route, setRoute] = useState(getRoute());   // '/' oder '/login'
   const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') localStorage.setItem('language', language);
+  }, [language]);
 
   // Hash-Änderungen beobachten
   useEffect(() => {
@@ -35,6 +49,8 @@ export default function App() {
   if (route === '/login') {
     return (
       <LoginPage
+        language={language}
+        onLanguageChange={setLanguage}
         onLoggedIn={(u) => {
           // <<< HIER: echten User aus dem Backend übernehmen
           setUser(u);
@@ -47,6 +63,8 @@ export default function App() {
 
   return (
     <Dashboard
+      language={language}
+      onLanguageChange={setLanguage}
       user={user}
       onLogout={() => {
         localStorage.removeItem('auth_token');
@@ -61,9 +79,29 @@ export default function App() {
 // ----------------------------
 // Login-Seite (vollbild)
 // ----------------------------
-function LoginPage({ onLoggedIn }) {
+function LoginPage({ onLoggedIn, language, onLanguageChange }) {
+  const translations = {
+    en: {
+      subtitle: 'Please sign in',
+      usernameLabel: 'Username',
+      passwordLabel: 'Password',
+      submitLabel: 'Log in',
+      genericError: 'Login failed',
+      languageLabel: 'Language',
+    },
+    de: {
+      subtitle: 'Bitte melden Sie sich an',
+      usernameLabel: 'Benutzername',
+      passwordLabel: 'Passwort',
+      submitLabel: 'Anmelden',
+      genericError: 'Login fehlgeschlagen',
+      languageLabel: 'Sprache',
+    },
+  };
   const [form, setForm] = useState({ username: '', password: '' });
   const [err, setErr] = useState(null);
+
+  const t = translations[language] || translations.en;
 
   const submit = async (e) => {
     e.preventDefault();
@@ -76,7 +114,9 @@ function LoginPage({ onLoggedIn }) {
       // <<< WICHTIG: echten User nach oben geben
       onLoggedIn(data.user);
     } catch (e) {
-      setErr(e?.response?.data?.error || 'Login fehlgeschlagen');
+      const apiMessage = e?.response?.data?.error;
+      if (apiMessage) setErr({ type: 'api', message: apiMessage });
+      else setErr({ type: 'generic' });
     }
   };
 
@@ -102,12 +142,51 @@ function LoginPage({ onLoggedIn }) {
           boxShadow: '0 20px 50px rgba(0,0,0,.12)',
         }}
       >
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              background: '#f1f5f9',
+              borderRadius: 999,
+              padding: '4px 8px 4px 12px',
+              fontSize: 12,
+              color: '#475569',
+            }}
+          >
+            <span style={{ fontWeight: 600 }}>{t.languageLabel}</span>
+            {Object.keys(LANGUAGE_NAMES).map((code) => {
+              const active = language === code;
+              return (
+                <button
+                  key={code}
+                  type="button"
+                  onClick={() => onLanguageChange(code)}
+                  style={{
+                    border: 0,
+                    borderRadius: 999,
+                    padding: '4px 10px',
+                    fontSize: 12,
+                    fontWeight: active ? 700 : 500,
+                    cursor: 'pointer',
+                    background: active ? '#6366f1' : 'transparent',
+                    color: active ? '#fff' : '#475569',
+                  }}
+                >
+                  {LANGUAGE_NAMES[code]}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <h2 style={{ margin: 0, textAlign: 'center' }}>UCCP DataVision</h2>
         <p style={{ marginTop: 8, color: '#64748b', textAlign: 'center' }}>
-          Bitte melden Sie sich an
+          {t.subtitle}
         </p>
 
-        <label style={{ fontSize: 13, color: '#475569' }}>Benutzername</label>
+        <label style={{ fontSize: 13, color: '#475569' }}>{t.usernameLabel}</label>
         <input
           value={form.username}
           onChange={(e) => setForm({ ...form, username: e.target.value })}
@@ -123,7 +202,7 @@ function LoginPage({ onLoggedIn }) {
           }}
         />
 
-        <label style={{ fontSize: 13, color: '#475569' }}>Passwort</label>
+        <label style={{ fontSize: 13, color: '#475569' }}>{t.passwordLabel}</label>
         <input
           type="password"
           value={form.password}
@@ -154,12 +233,12 @@ function LoginPage({ onLoggedIn }) {
             cursor: 'pointer',
           }}
         >
-          Login
+          {t.submitLabel}
         </button>
 
         {err && (
           <div style={{ color: '#ef4444', marginTop: 10, textAlign: 'center' }}>
-            {err}
+            {err.type === 'api' ? err.message : t.genericError}
           </div>
         )}
 
@@ -181,7 +260,57 @@ function LoginPage({ onLoggedIn }) {
 // ----------------------------
 // Dashboard (deine aktuelle Seite)
 // ----------------------------
-function Dashboard({ user, onLogout }) {
+function Dashboard({ user, onLogout, language, onLanguageChange }) {
+  const translations = {
+    en: {
+      loggedInAs: 'Logged in as',
+      logout: 'Log out',
+      languageLabel: 'Language',
+      subtitle: 'Analyze work code statistics for any date range',
+      workcodeLabel: 'Work Code (optional)',
+      workcodePlaceholder: 'e.g. PCMO.OC1, KCPF.BD1, KCPF.BD15',
+      fromLabel: 'From date *',
+      toLabel: 'To date *',
+      submitIdle: 'ANALYZE',
+      submitLoading: 'Loading…',
+      missingDates: 'Please provide a start and end date.',
+      invalidRange: 'Start date must be before end date.',
+      dataFetchError: 'Failed to load data.',
+      resultTitle: 'Result',
+      resultCommunication: 'Communication:',
+      resultForAll: 'All types',
+      resultDateRange: 'Date range:',
+      resultCount: 'Sent count:',
+      resultCountSuffix: 'times',
+      errorTitle: 'Error',
+      footerBuiltBy: 'Built by Hanisten Thivakaran',
+    },
+    de: {
+      loggedInAs: 'Angemeldet als',
+      logout: 'Abmelden',
+      languageLabel: 'Sprache',
+      subtitle: 'Analysieren Sie Work Code Statistiken für beliebige Zeiträume',
+      workcodeLabel: 'Work Code (optional)',
+      workcodePlaceholder: 'z.B. PCMO.OC1, KCPF.BD1, KCPF.BD15',
+      fromLabel: 'Von Datum *',
+      toLabel: 'Bis Datum *',
+      submitIdle: 'ANALYSIEREN',
+      submitLoading: 'Wird geladen…',
+      missingDates: 'Bitte Start- und Enddatum eingeben.',
+      invalidRange: 'Startdatum muss vor Enddatum liegen.',
+      dataFetchError: 'Fehler beim Laden der Daten.',
+      resultTitle: 'Ergebnis',
+      resultCommunication: 'Kommunikation:',
+      resultForAll: 'Alle Typen',
+      resultDateRange: 'Zeitraum:',
+      resultCount: 'Anzahl versendet:',
+      resultCountSuffix: 'mal',
+      errorTitle: 'Fehler',
+      footerBuiltBy: 'Erstellt von Hanisten Thivakaran',
+    },
+  };
+
+  const t = translations[language] || translations.en;
   const [formData, setFormData] = useState({ workcode: '', from: '', to: '' });
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
@@ -203,11 +332,11 @@ function Dashboard({ user, onLogout }) {
 
   const validateForm = () => {
     if (!formData.from || !formData.to) {
-      setError('Bitte Start- und Enddatum eingeben.');
+      setError(t.missingDates);
       return false;
     }
     if (new Date(formData.from) > new Date(formData.to)) {
-      setError('Startdatum muss vor Enddatum liegen.');
+      setError(t.invalidRange);
       return false;
     }
     return true;
@@ -227,7 +356,7 @@ function Dashboard({ user, onLogout }) {
       setResult(data);
     } catch (err) {
       if (err?.response?.status === 401) window.location.hash = '#/login';
-      else setError('Fehler beim Laden der Daten.');
+      else setError(t.dataFetchError);
     } finally {
       setLoading(false);
     }
@@ -239,33 +368,30 @@ function Dashboard({ user, onLogout }) {
   };
 
   const fmtDate = (s) =>
-    new Date(s).toLocaleDateString('de-DE', {
+    new Date(s).toLocaleDateString(language === 'de' ? 'de-DE' : 'en-US', {
       day: '2-digit',
       month: 'long',
       year: 'numeric',
     });
 
   const ResultBlock = ({ data }) => {
-    const thinNbsp = '\u202F',
-      nbHyphen = '\u2011';
-    const count = (data.count ?? 0).toLocaleString('de-CH');
+    const count = (data.count ?? 0).toLocaleString(language === 'de' ? 'de-CH' : 'en-US');
     return (
       <div style={{ lineHeight: 1.45, fontSize: '0.95rem', color: '#1f2937' }}>
         <div style={{ marginBottom: 4 }}>
-          <span style={{ color: '#6b7280' }}>Kommunikation:</span>{' '}
-          <strong>{data.workcode || 'Alle Typen'}</strong>
+          <span style={{ color: '#6b7280' }}>{t.resultCommunication}</span>{' '}
+          <strong>{data.workcode || t.resultForAll}</strong>
         </div>
         <div style={{ marginBottom: 4 }}>
-          <span style={{ color: '#6b7280' }}>Zeitraum:</span>{' '}
+          <span style={{ color: '#6b7280' }}>{t.resultDateRange}</span>{' '}
           {fmtDate(data.from)} – {fmtDate(data.to)}
         </div>
         <div>
-          <span style={{ color: '#6b7280' }}>Anzahl versendet:</span>{' '}
+          <span style={{ color: '#6b7280' }}>{t.resultCount}</span>{' '}
           <strong>
             {count}
-            {thinNbsp}
-            {nbHyphen}
-            mal
+            {' '}
+            {t.resultCountSuffix}
           </strong>
         </div>
       </div>
@@ -283,7 +409,10 @@ function Dashboard({ user, onLogout }) {
       {/* Top-Bar: User + Logout */}
       <div
         style={{
-          textAlign: 'right',
+          display: 'flex',
+          justifyContent: 'flex-end',
+          alignItems: 'center',
+          gap: 12,
           maxWidth: 760,
           width: '100%',
           margin: '12px auto 4px',
@@ -291,24 +420,61 @@ function Dashboard({ user, onLogout }) {
           color: '#94a3b8',
         }}
       >
-        {displayName && displayName !== '—' ? (
-          <>
-            Angemeldet als <strong>{displayName}</strong>
-          </>
-        ) : null}
-        <button
-          onClick={onLogout}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {displayName && displayName !== '—' ? (
+            <span>
+              {t.loggedInAs}{' '}
+              <strong>{displayName}</strong>
+            </span>
+          ) : null}
+          <button
+            onClick={onLogout}
+            style={{
+              border: 0,
+              background: 'transparent',
+              color: '#c7d2fe',
+              textDecoration: 'underline',
+              cursor: 'pointer',
+            }}
+          >
+            {t.logout}
+          </button>
+        </div>
+        <div
           style={{
-            marginLeft: 8,
-            border: 0,
-            background: 'transparent',
-            color: '#c7d2fe',
-            textDecoration: 'underline',
-            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            background: '#f1f5f9',
+            borderRadius: 999,
+            padding: '4px 8px 4px 12px',
+            color: '#475569',
           }}
         >
-          Logout
-        </button>
+          <span style={{ fontWeight: 600 }}>{t.languageLabel}</span>
+          {Object.keys(LANGUAGE_NAMES).map((code) => {
+            const active = language === code;
+            return (
+              <button
+                key={code}
+                type="button"
+                onClick={() => onLanguageChange(code)}
+                style={{
+                  border: 0,
+                  borderRadius: 999,
+                  padding: '4px 10px',
+                  fontSize: 12,
+                  fontWeight: active ? 700 : 500,
+                  cursor: 'pointer',
+                  background: active ? '#6366f1' : 'transparent',
+                  color: active ? '#fff' : '#475569',
+                }}
+              >
+                {LANGUAGE_NAMES[code]}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Header */}
@@ -329,7 +495,7 @@ function Dashboard({ user, onLogout }) {
         </div>
         <h1 style={{ margin: '6px 0 6px' }}>UCCP Analytics</h1>
         <p style={{ color: '#94a3b8', margin: 0 }}>
-          Analysieren Sie Work&nbsp;Code Statistiken für beliebige Zeiträume
+          {t.subtitle}
         </p>
       </div>
 
@@ -337,18 +503,18 @@ function Dashboard({ user, onLogout }) {
       <div style={{ flex: 1 }}>
         <form className="form" onSubmit={handleSubmit}>
           <div className="form-group">
-            <label htmlFor="workcode">Work Code (optional)</label>
+            <label htmlFor="workcode">{t.workcodeLabel}</label>
             <input
               id="workcode"
               name="workcode"
               value={formData.workcode}
               onChange={handleInputChange}
-              placeholder="z.B. PCMO.OC1, KCPF.BD1, KCPF.BD15"
+              placeholder={t.workcodePlaceholder}
               disabled={loading}
             />
           </div>
           <div className="form-group">
-            <label htmlFor="from">Von Datum *</label>
+            <label htmlFor="from">{t.fromLabel}</label>
             <input
               type="date"
               id="from"
@@ -360,7 +526,7 @@ function Dashboard({ user, onLogout }) {
             />
           </div>
           <div className="form-group">
-            <label htmlFor="to">Bis Datum *</label>
+            <label htmlFor="to">{t.toLabel}</label>
             <input
               type="date"
               id="to"
@@ -372,7 +538,7 @@ function Dashboard({ user, onLogout }) {
             />
           </div>
           <button className="submit-btn" disabled={loading || !formData.from || !formData.to}>
-            {loading ? 'Wird geladen…' : 'ANALYSIEREN'}
+            {loading ? t.submitLoading : t.submitIdle}
           </button>
         </form>
 
@@ -387,7 +553,7 @@ function Dashboard({ user, onLogout }) {
               padding: '14px 16px',
             }}
           >
-            <div style={{ color: '#16a34a', fontWeight: 700, marginBottom: 6 }}>Ergebnis</div>
+            <div style={{ color: '#16a34a', fontWeight: 700, marginBottom: 6 }}>{t.resultTitle}</div>
             <ResultBlock data={result} />
           </div>
         )}
@@ -403,7 +569,7 @@ function Dashboard({ user, onLogout }) {
               padding: '14px 16px',
             }}
           >
-            <div style={{ color: '#b91c1c', fontWeight: 700, marginBottom: 6 }}>Fehler</div>
+            <div style={{ color: '#b91c1c', fontWeight: 700, marginBottom: 6 }}>{t.errorTitle}</div>
             <p style={{ margin: 0 }}>{error}</p>
           </div>
         )}
@@ -425,7 +591,7 @@ function Dashboard({ user, onLogout }) {
           rel="noreferrer"
           style={{ color: '#c7d2fe', textDecoration: 'underline' }}
         >
-          Built by Hanisten Thivakaran
+          {t.footerBuiltBy}
         </a>
       </footer>
     </div>
